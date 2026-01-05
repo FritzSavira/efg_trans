@@ -1,0 +1,23 @@
+services:
+  s2s-app:
+    build: .
+    container_name: s2s_translator
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount the models cache so we don't re-download models on every rebuild
+      - ./models_cache:/app/models_cache
+      # Mount the source code for development (optional, remove for production)
+      - ./src:/app/src
+      - ./static:/app/static
+      - ./config.yaml:/app/config.yaml
+    environment:
+      - XDG_CACHE_HOME=/app/models_cache
+    # Resource reservation for GPU (uncomment if you have NVIDIA Container Toolkit)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

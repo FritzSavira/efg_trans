@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+torch
+torchaudio
+transformers
+silero-vad
+numpy
+pyyaml
+pytest
+httpx
+black
+ruff
+blobfile
+sentencepiece
+soundfile

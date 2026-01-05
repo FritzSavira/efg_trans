@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-s2s-translation"
+version = "0.1.0"
+description = "Local Speech-to-Speech Translation System"
+authors = [{name = "Fried", email = "fried@example.com"}]
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "torch",
+    "torchaudio",
+    "transformers",
+    "silero-vad",
+    "numpy",
+    "pyyaml"
+]
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "."
+]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.black]
+line-length = 120

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S2S Translator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .container { max-width: 600px; margin-top: 50px; }
+        .status-dot { height: 10px; width: 10px; background-color: #bbb; border-radius: 50%; display: inline-block; }
+        .status-online { background-color: #28a745; }
+        #status-text { font-weight: bold; }
+        .log-area { height: 200px; overflow-y: auto; background: #eee; padding: 10px; font-family: monospace; font-size: 0.8rem; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container bg-white p-5 shadow rounded">
+        <h2 class="mb-4 text-center">Multi-Language S2S Translator</h2>
+        
+        <div class="mb-3">
+            <label for="language-select" class="form-label fw-bold">Zielsprache wählen:</label>
+            <select class="form-select mb-3" id="language-select">
+                <option value="eng" selected>Englisch (English)</option>
+                <option value="spa">Spanisch (Español)</option>
+                <option value="por">Portugiesisch (Português)</option>
+                <option value="arb">Arabisch (العربية)</option>
+                <option value="pes">Farsi (Persisch)</option>
+                <option value="cmn">Mandarin (Chinesisch)</option>
+            </select>
+        </div>
+
+        <div class="mb-4">
+            <span class="status-dot" id="dot"></span>
+            Status: <span id="status-text">Disconnected</span>
+        </div>
+
+        <div class="d-grid gap-2 mb-4">
+            <button id="record-btn" class="btn btn-primary btn-lg">Start Recording</button>
+        </div>
+
+        <div class="log-area mb-2" id="logs">
+            Welcome. Click Start to begin.
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        let audioContext;
+        let scriptProcessor;
+        let input;
+        const recordBtn = document.getElementById('record-btn');
+        const statusText = document.getElementById('status-text');
+        const dot = document.getElementById('dot');
+        const logs = document.getElementById('logs');
+        const languageSelect = document.getElementById('language-select');
+
+        function addLog(msg) {
+            const div = document.createElement('div');
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logs.appendChild(div);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        recordBtn.onclick = async () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                stopRecording();
+                return;
+            }
+            startRecording();
+        };
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Initialize WebSocket with language parameter
+                const targetLang = languageSelect.value;
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                ws = new WebSocket(`${protocol}//${window.location.host}/ws/translate?tgt_lang=${targetLang}`);
+                ws.binaryType = 'arraybuffer';
+
+                ws.onopen = () => {
+                    statusText.textContent = `Online (${targetLang})`;
+                    dot.classList.add('status-online');
+                    recordBtn.textContent = 'Stop Recording';
+                    recordBtn.classList.replace('btn-primary', 'btn-danger');
+                    languageSelect.disabled = true;
+                    addLog(`Connected to server. Target: ${targetLang}`);
+                    setupAudioProcessing(stream);
+                };
+
+                ws.onmessage = async (event) => {
+                    addLog('Received translation. Playing...');
+                    playAudio(event.data);
+                };
+
+                ws.onclose = () => {
+                    addLog('Disconnected from server.');
+                    stopRecording();
+                };
+
+            } catch (err) {
+                addLog('Error accessing microphone: ' + err);
+            }
+        }
+
+        function stopRecording() {
+            if (scriptProcessor) {
+                scriptProcessor.disconnect();
+                scriptProcessor = null;
+            }
+            if (input) {
+                input.disconnect();
+                input = null;
+            }
+            if (ws) {
+                ws.close();
+            }
+            statusText.textContent = 'Disconnected';
+            dot.classList.remove('status-online');
+            recordBtn.textContent = 'Start Recording';
+            recordBtn.classList.replace('btn-danger', 'btn-primary');
+            languageSelect.disabled = false;
+        }
+
+        function setupAudioProcessing(stream) {
+            // Use native sample rate to avoid browser resampling issues/artifacts
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const sourceSampleRate = audioContext.sampleRate;
+            const targetSampleRate = 16000;
+            
+            addLog(`Microphone Native Rate: ${sourceSampleRate}Hz. Downsampling to ${targetSampleRate}Hz...`);
+            
+            input = audioContext.createMediaStreamSource(stream);
+            // Buffer size 4096 is fine
+            scriptProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+
+            scriptProcessor.onaudioprocess = (e) => {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    
+                    // Manual Downsampling
+                    if (sourceSampleRate === targetSampleRate) {
+                         ws.send(inputData.buffer);
+                    } else {
+                        // Simple decimation
+                        const ratio = sourceSampleRate / targetSampleRate;
+                        const newLength = Math.floor(inputData.length / ratio);
+                        const result = new Float32Array(newLength);
+                        
+                        for (let i = 0; i < newLength; i++) {
+                            // Basic linear interpolation or nearest neighbor
+                            // Nearest neighbor (taking every Nth sample) is often enough for speech ASR
+                            // but let's do simple index mapping
+                            const offset = Math.floor(i * ratio);
+                            result[i] = inputData[offset];
+                        }
+                        ws.send(result.buffer);
+                    }
+                }
+            };
+
+            input.connect(scriptProcessor);
+            scriptProcessor.connect(audioContext.destination);
+        }
+
+        async function playAudio(arrayBuffer) {
+            if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            
+            try {
+                // Decode the WAV file data sent by the server
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                
+                const source = audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioContext.destination);
+                source.start();
+                addLog(`Playing audio (${audioBuffer.duration.toFixed(2)}s)`);
+            } catch (e) {
+                addLog('Error decoding audio: ' + e);
+            }
+        }
+    </script>
+</body>
+</html>

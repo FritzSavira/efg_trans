@@ -1,0 +1,12 @@
+app:
+  host: "0.0.0.0"
+  port: 8000
+
+models:
+  translation:
+    variant: "facebook/seamless-m4t-v2-large" # Options: "facebook/seamless-m4t-v2-large", "facebook/seamless-m4t-v2-medium"
+    src_lang: "deu"
+    tgt_lang: "eng"
+  vad:
+    threshold: 0.5
+    min_silence_duration_ms: 500
