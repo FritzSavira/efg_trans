@@ -47,7 +47,11 @@
         </div>
 
         <div class="d-grid gap-2 mb-4">
-            <button id="record-btn" class="btn btn-primary btn-lg">Start Recording</button>
+            <div class="d-flex gap-2">
+                <button id="record-btn" class="btn btn-primary flex-grow-1">Start Recording</button>
+                <button id="upload-btn" class="btn btn-secondary">📁 Upload File</button>
+                <input type="file" id="file-input" accept=".wav,.mp3,.ogg,.webm,.m4a" style="display: none;">
+            </div>
         </div>
 
         <div class="log-area mb-2" id="logs">
@@ -67,6 +71,9 @@
         const languageSelect = document.getElementById('language-select');
         const silenceSlider = document.getElementById('silence-slider');
         const silenceVal = document.getElementById('silence-val');
+        const uploadBtn = document.getElementById('upload-btn');
+        const fileInput = document.getElementById('file-input');
+        let isFileStreaming = false;
 
         silenceSlider.oninput = function() {
             silenceVal.textContent = this.value + ' ms';
@@ -79,6 +86,105 @@
                 const msg = JSON.stringify({type: "config", min_silence_ms: val});
                 ws.send(msg);
             }
+        }
+        
+        uploadBtn.onclick = () => fileInput.click();
+
+        fileInput.onchange = async (e) => {
+             const file = e.target.files[0];
+             if (!file) return;
+             await handleFileUpload(file);
+             fileInput.value = ''; 
+        };
+
+        async function handleFileUpload(file) {
+             if (ws && ws.readyState === WebSocket.OPEN) {
+                 stopRecording();
+                 // Give it a moment to close
+                 await new Promise(r => setTimeout(r, 500));
+             }
+             
+             addLog(`Processing file: ${file.name} (${(file.size/1024).toFixed(1)} KB)...`);
+             
+             try {
+                 const arrayBuffer = await file.arrayBuffer();
+                 const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+                 const audioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
+                 
+                 addLog(`Decoded. Original Rate: ${audioBuffer.sampleRate}Hz, Duration: ${audioBuffer.duration.toFixed(2)}s`);
+                 
+                 const resampledBuffer = await resampleTo16k(audioBuffer);
+                 addLog(`Resampled to 16000Hz.`);
+                 
+                 await connectWebSocket();
+                 streamAudioFile(resampledBuffer);
+                 
+             } catch (err) {
+                 addLog('Error processing file: ' + err);
+             }
+        }
+        
+        async function resampleTo16k(audioBuffer) {
+            if (audioBuffer.sampleRate === 16000) return audioBuffer;
+            const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * 16000, 16000);
+            const source = offlineCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(offlineCtx.destination);
+            source.start(0);
+            return await offlineCtx.startRendering();
+        }
+        
+        async function connectWebSocket() {
+            return new Promise((resolve, reject) => {
+                const targetLang = languageSelect.value;
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                ws = new WebSocket(`${protocol}//${window.location.host}/ws/translate?tgt_lang=${targetLang}`);
+                ws.binaryType = 'arraybuffer';
+                
+                ws.onopen = () => {
+                    statusText.textContent = `File Mode (${targetLang})`;
+                    dot.classList.add('status-online');
+                    recordBtn.textContent = 'Stop Playback';
+                    recordBtn.classList.replace('btn-primary', 'btn-danger');
+                    languageSelect.disabled = true;
+                    uploadBtn.disabled = true;
+                    addLog('Connected to server.');
+                    resolve();
+                };
+                
+                ws.onerror = (err) => reject(err);
+                
+                ws.onmessage = async (event) => {
+                    addLog('Received translation. Enqueueing...');
+                    audioQueue.enqueue(event.data);
+                };
+                
+                ws.onclose = () => {
+                     stopRecording();
+                };
+            });
+        }
+
+        async function streamAudioFile(audioBuffer) {
+            isFileStreaming = true;
+            const rawData = audioBuffer.getChannelData(0); 
+            const chunkSize = 4096; // ~256ms
+            let offset = 0;
+            
+            addLog('Starting streaming...');
+            
+            while (offset < rawData.length && isFileStreaming && ws && ws.readyState === WebSocket.OPEN) {
+                const end = Math.min(offset + chunkSize, rawData.length);
+                const chunk = rawData.slice(offset, end);
+                
+                ws.send(chunk.buffer);
+                
+                offset += chunkSize;
+                await new Promise(r => setTimeout(r, 250));
+            }
+            
+            addLog('File streaming finished.');
+            isFileStreaming = false;
         }
 
         class AudioQueue {
@@ -169,6 +275,7 @@
                     recordBtn.textContent = 'Stop Recording';
                     recordBtn.classList.replace('btn-primary', 'btn-danger');
                     languageSelect.disabled = true;
+                    uploadBtn.disabled = true;
                     addLog(`Connected to server. Target: ${targetLang}`);
                     setupAudioProcessing(stream);
                 };
@@ -189,6 +296,7 @@
         }
 
         function stopRecording() {
+            isFileStreaming = false; // Stop file loop
             if (scriptProcessor) {
                 scriptProcessor.disconnect();
                 scriptProcessor = null;
@@ -199,6 +307,7 @@
             }
             if (ws) {
                 ws.close();
+                ws = null;
             }
             audioQueue.clear();
             statusText.textContent = 'Disconnected';
@@ -206,6 +315,7 @@
             recordBtn.textContent = 'Start Recording';
             recordBtn.classList.replace('btn-danger', 'btn-primary');
             languageSelect.disabled = false;
+            uploadBtn.disabled = false;
         }
 
         function setupAudioProcessing(stream) {
