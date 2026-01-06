@@ -6,6 +6,7 @@ from src.core.vad_processor import VADProcessor
 def test_vad_logic_with_mock():
     # Initialize VAD
     vad = VADProcessor()
+    vad.padding_ms = 0  # Force 0 for this logic test to avoid padding interference
 
     # MOCK the iterator to control 'start' and 'end' events
     # We don't want to test Silero's accuracy, but OUR buffering logic.
@@ -50,5 +51,22 @@ def test_vad_logic_with_mock():
     assert len(res3) == chunk_size * 3, f"Expected 3 chunks of audio, got {len(res3)/chunk_size} chunks"
 
 
+def test_set_min_silence():
+    vad = VADProcessor()
+    
+    # Test valid update
+    vad.set_min_silence(1000)
+    assert vad.min_silence_ms == 1000
+    assert vad.iterator.min_silence_samples == 16000  # 1000ms * 16000Hz / 1000
+
+    # Test invalid update (should be ignored)
+    vad.set_min_silence(50)
+    assert vad.min_silence_ms == 1000  # Should remain unchanged
+
+    vad.set_min_silence(6000)
+    assert vad.min_silence_ms == 1000  # Should remain unchanged
+
+
 if __name__ == "__main__":
     test_vad_logic_with_mock()
+

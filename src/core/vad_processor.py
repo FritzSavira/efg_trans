@@ -36,6 +36,20 @@ class VADProcessor:
         self.sentence_buffer: List[np.ndarray] = []  # For accumulating the actual audio to return
         self.is_recording = False
 
+    def set_min_silence(self, ms: int):
+        """
+        Dynamically updates the VAD sensitivity (min silence duration).
+        """
+        if not (100 <= ms <= 5000):
+            logger.warning(f"Ignored invalid min_silence_ms: {ms}")
+            return
+
+        logger.info(f"VAD Config Update: min_silence_duration_ms set to {ms}")
+        self.min_silence_ms = ms
+        # Update Silero iterator property
+        # min_silence_samples is calculated as: ms * sample_rate / 1000
+        self.iterator.min_silence_samples = int((ms * self.sample_rate) / 1000)
+
     def process(self, chunk_bytes: bytes) -> Optional[np.ndarray]:
         """
         Processes a chunk of audio. Returns a complete sentence as np.ndarray

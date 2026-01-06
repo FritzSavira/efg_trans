@@ -35,6 +35,12 @@
             </select>
         </div>
 
+        <div class="mb-3">
+            <label for="silence-slider" class="form-label fw-bold">Antwort-Geschwindigkeit (Pause): <span id="silence-val" class="badge bg-secondary">500 ms</span></label>
+            <input type="range" class="form-range" id="silence-slider" min="200" max="2000" step="100" value="500">
+            <div class="form-text">Kleinerer Wert = Schnellere Antwort (gut für kurze Sätze). Größerer Wert = Mehr Zeit zum Nachdenken.</div>
+        </div>
+
         <div class="mb-4">
             <span class="status-dot" id="dot"></span>
             Status: <span id="status-text">Disconnected</span>
@@ -59,6 +65,21 @@
         const dot = document.getElementById('dot');
         const logs = document.getElementById('logs');
         const languageSelect = document.getElementById('language-select');
+        const silenceSlider = document.getElementById('silence-slider');
+        const silenceVal = document.getElementById('silence-val');
+
+        silenceSlider.oninput = function() {
+            silenceVal.textContent = this.value + ' ms';
+        }
+
+        silenceSlider.onchange = function() {
+            const val = parseInt(this.value);
+            addLog(`Setting silence timeout to ${val}ms...`);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                const msg = JSON.stringify({type: "config", min_silence_ms: val});
+                ws.send(msg);
+            }
+        }
 
         class AudioQueue {
             constructor() {

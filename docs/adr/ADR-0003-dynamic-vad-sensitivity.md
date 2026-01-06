@@ -1,7 +1,7 @@
 # ADR-0003: Dynamic VAD Sensitivity Adjustment
 
 ## Status
-Proposed
+Accepted
 
 ## Date
 2026-01-05

@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [1.1.0] - 2026-01-06
 ### Added
+- **Dynamic VAD Sensitivity:** Added a UI slider to adjust the `min_silence_duration_ms` at runtime. The backend now supports a hybrid WebSocket protocol (Binary for Audio, JSON for Config).
 - **Continuous Duplex Pipeline:** Implemented asynchronous producer-consumer architecture in `src/api/main.py`. This allows the user to speak continuously while the system translates and plays back previous sentences in parallel (Reference: `ADR-0002`).
 - **Frontend Audio Queue:** Added `AudioQueue` class in `static/index.html` to manage sequential playback of translated audio segments, preventing overlap.
 - **VAD Padding:** Added configurable silence padding (`padding_ms`) in `src/core/vad_processor.py` to prevent audio clipping at the start/end of detected sentences.

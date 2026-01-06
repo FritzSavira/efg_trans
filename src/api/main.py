@@ -2,6 +2,7 @@ import logging
 import os
 import time
 import asyncio
+import json
 from contextlib import asynccontextmanager
 
 import soundfile as sf
@@ -78,22 +79,38 @@ async def websocket_endpoint(websocket: WebSocket, tgt_lang: str = "eng"):
         """Producer: Reads from WS, runs VAD, pushes to Queue."""
         try:
             while True:
-                # Receive audio chunk as bytes
-                data = await websocket.receive_bytes()
-                
-                # Process chunk through VAD
-                sentence_audio = vad.process(data)
-                
-                if sentence_audio is not None:
-                    timestamp = int(time.time())
-                    logger.info(f"Sentence detected, pushing to queue... (Timestamp: {timestamp})")
-                    
-                    # DEBUG: Save Input Audio
-                    os.makedirs("static/debug", exist_ok=True)
-                    input_filename = f"static/debug/input_{timestamp}.wav"
-                    sf.write(input_filename, sentence_audio, 16000)
+                # Receive message (can be bytes or text)
+                message = await websocket.receive()
 
-                    await queue.put(sentence_audio)
+                if "bytes" in message:
+                    # Receive audio chunk as bytes
+                    data = message["bytes"]
+                    
+                    # Process chunk through VAD
+                    sentence_audio = vad.process(data)
+                    
+                    if sentence_audio is not None:
+                        timestamp = int(time.time())
+                        logger.info(f"Sentence detected, pushing to queue... (Timestamp: {timestamp})")
+                        
+                        # DEBUG: Save Input Audio
+                        os.makedirs("static/debug", exist_ok=True)
+                        input_filename = f"static/debug/input_{timestamp}.wav"
+                        sf.write(input_filename, sentence_audio, 16000)
+
+                        await queue.put(sentence_audio)
+
+                elif "text" in message:
+                    # Process config command
+                    try:
+                        payload = json.loads(message["text"])
+                        if payload.get("type") == "config":
+                            ms = payload.get("min_silence_ms")
+                            if ms:
+                                vad.set_min_silence(int(ms))
+                    except Exception as e:
+                        logger.warning(f"Invalid config message: {e}")
+
         except WebSocketDisconnect:
             logger.info("Client disconnected (input loop).")
             # Signal consumer to stop
