@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+import asyncio
 from contextlib import asynccontextmanager
 
 import soundfile as sf
@@ -70,27 +71,57 @@ async def websocket_endpoint(websocket: WebSocket, tgt_lang: str = "eng"):
     # We should reset VAD state for each new connection
     vad.reset()
 
-    try:
-        while True:
-            # Receive audio chunk as bytes
-            data = await websocket.receive_bytes()
-            
-            # Process chunk through VAD
-            sentence_audio = vad.process(data)
-            
-            if sentence_audio is not None:
-                timestamp = int(time.time())
-                logger.info(f"Sentence detected, starting translation... (Timestamp: {timestamp})")
-                
-                # DEBUG: Save Input Audio
-                os.makedirs("static/debug", exist_ok=True)
-                input_filename = f"static/debug/input_{timestamp}.wav"
-                sf.write(input_filename, sentence_audio, 16000)
+    # Create an asyncio queue for communication between input and translation loops
+    queue = asyncio.Queue()
 
-                # Translate sentence with dynamic target language
-                translated_audio_bytes = translator.translate(sentence_audio, tgt_lang=tgt_lang)
+    async def input_loop():
+        """Producer: Reads from WS, runs VAD, pushes to Queue."""
+        try:
+            while True:
+                # Receive audio chunk as bytes
+                data = await websocket.receive_bytes()
                 
+                # Process chunk through VAD
+                sentence_audio = vad.process(data)
+                
+                if sentence_audio is not None:
+                    timestamp = int(time.time())
+                    logger.info(f"Sentence detected, pushing to queue... (Timestamp: {timestamp})")
+                    
+                    # DEBUG: Save Input Audio
+                    os.makedirs("static/debug", exist_ok=True)
+                    input_filename = f"static/debug/input_{timestamp}.wav"
+                    sf.write(input_filename, sentence_audio, 16000)
+
+                    await queue.put(sentence_audio)
+        except WebSocketDisconnect:
+            logger.info("Client disconnected (input loop).")
+            # Signal consumer to stop
+            await queue.put(None)
+        except Exception as e:
+            logger.error(f"Error in input_loop: {e}")
+            await queue.put(None)
+
+    async def translation_loop():
+        """Consumer: Pulls from Queue, Translates (Thread), Sends to WS."""
+        try:
+            while True:
+                sentence_audio = await queue.get()
+                
+                if sentence_audio is None:
+                    # Sentinel received, stop
+                    break
+
+                logger.info(f"Processing sentence from queue. Queue size: {queue.qsize()}")
+                
+                # Run blocking translation inference in a separate thread
+                loop = asyncio.get_running_loop()
+                translated_audio_bytes = await loop.run_in_executor(
+                    None, translator.translate, sentence_audio, tgt_lang
+                )
+
                 # DEBUG: Save Output Audio
+                timestamp = int(time.time())
                 output_filename = f"static/debug/output_{timestamp}.wav"
                 with open(output_filename, "wb") as f:
                     f.write(translated_audio_bytes)
@@ -98,11 +129,13 @@ async def websocket_endpoint(websocket: WebSocket, tgt_lang: str = "eng"):
                 # Send back the translated audio bytes (WAV)
                 await websocket.send_bytes(translated_audio_bytes)
                 logger.info(f"Translated audio ({tgt_lang}) sent to client.")
-    except WebSocketDisconnect:
-        logger.info("Client disconnected.")
-    except Exception as e:
-        logger.error(f"Error in WebSocket loop: {e}")
-        await websocket.close()
+                
+                queue.task_done()
+        except Exception as e:
+            logger.error(f"Error in translation_loop: {e}")
+
+    # Run both loops concurrently
+    await asyncio.gather(input_loop(), translation_loop())
 
 
 # Mount static files to /static instead of root to avoid WebSocket conflict

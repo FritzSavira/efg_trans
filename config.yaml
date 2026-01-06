@@ -1,12 +1,19 @@
+# Network and Server Configuration
 app:
-  host: "0.0.0.0"
-  port: 8000
+  host: "0.0.0.0" # The network interface to bind to. "0.0.0.0" allows access from other devices in the network.
+  port: 8000      # The port on which the web server will be accessible.
 
+# AI Model Configuration
 models:
+  # Speech-to-Speech Translation Settings
   translation:
+    # The AI model variant to use. 'large' is more accurate but slower/heavier; 'medium' is faster.
     variant: "facebook/seamless-m4t-v2-large" # Options: "facebook/seamless-m4t-v2-large", "facebook/seamless-m4t-v2-medium"
-    src_lang: "deu"
-    tgt_lang: "eng"
+    src_lang: "deu" # The source language code (e.g., 'deu' for German).
+    tgt_lang: "eng" # The default target language code (e.g., 'eng' for English).
+
+  # Voice Activity Detection (VAD) Settings
   vad:
-    threshold: 0.5
-    min_silence_duration_ms: 500
+    threshold: 0.5               # Sensitivity (0.0 to 1.0). Higher means less sensitive (ignores more noise).
+    min_silence_duration_ms: 500 # How many milliseconds of silence are needed to mark the end of a sentence.
+    padding_ms: 10              # Adds extra silence (ms) before/after speech to prevent words from being cut off.

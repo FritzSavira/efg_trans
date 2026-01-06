@@ -1,7 +1,7 @@
 # ADR-0002: Continuous Duplex Pipeline for Simultaneous Translation
 
 ## Status
-Proposed
+Accepted
 
 ## Date
 2026-01-05

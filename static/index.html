@@ -17,6 +17,11 @@
 <body>
     <div class="container bg-white p-5 shadow rounded">
         <h2 class="mb-4 text-center">Multi-Language S2S Translator</h2>
+
+        <div class="alert alert-info text-center" role="alert">
+            🎧 <strong>Bitte Kopfhörer verwenden!</strong><br>
+            Der "Continuous Mode" erfordert Kopfhörer, um ein Echo zu vermeiden.
+        </div>
         
         <div class="mb-3">
             <label for="language-select" class="form-label fw-bold">Zielsprache wählen:</label>
@@ -55,6 +60,63 @@
         const logs = document.getElementById('logs');
         const languageSelect = document.getElementById('language-select');
 
+        class AudioQueue {
+            constructor() {
+                this.queue = [];
+                this.isPlaying = false;
+            }
+
+            enqueue(arrayBuffer) {
+                this.queue.push(arrayBuffer);
+                this.process();
+            }
+
+            async process() {
+                if (this.isPlaying || this.queue.length === 0) {
+                    return;
+                }
+
+                this.isPlaying = true;
+                const nextBuffer = this.queue.shift();
+
+                try {
+                    await this.play(nextBuffer);
+                } catch (e) {
+                    addLog('Error playing audio from queue: ' + e);
+                    this.isPlaying = false;
+                    this.process(); // Try next
+                }
+            }
+
+            async play(arrayBuffer) {
+                if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                
+                // Decode asynchronously
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                
+                const source = audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioContext.destination);
+                
+                return new Promise((resolve) => {
+                    source.onended = () => {
+                        this.isPlaying = false;
+                        resolve();
+                        this.process(); // Trigger next item
+                    };
+                    source.start();
+                    addLog(`Playing audio (${audioBuffer.duration.toFixed(2)}s) [Queue: ${this.queue.length}]`);
+                });
+            }
+
+            clear() {
+                this.queue = [];
+                this.isPlaying = false;
+            }
+        }
+
+        const audioQueue = new AudioQueue();
+
         function addLog(msg) {
             const div = document.createElement('div');
             div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
@@ -91,8 +153,8 @@
                 };
 
                 ws.onmessage = async (event) => {
-                    addLog('Received translation. Playing...');
-                    playAudio(event.data);
+                    addLog('Received translation. Enqueueing...');
+                    audioQueue.enqueue(event.data);
                 };
 
                 ws.onclose = () => {
@@ -117,6 +179,7 @@
             if (ws) {
                 ws.close();
             }
+            audioQueue.clear();
             statusText.textContent = 'Disconnected';
             dot.classList.remove('status-online');
             recordBtn.textContent = 'Start Recording';
@@ -165,22 +228,7 @@
             scriptProcessor.connect(audioContext.destination);
         }
 
-        async function playAudio(arrayBuffer) {
-            if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-            
-            try {
-                // Decode the WAV file data sent by the server
-                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                
-                const source = audioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioContext.destination);
-                source.start();
-                addLog(`Playing audio (${audioBuffer.duration.toFixed(2)}s)`);
-            } catch (e) {
-                addLog('Error decoding audio: ' + e);
-            }
-        }
+
     </script>
 </body>
 </html>

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-01-06
+### Added
+- **Continuous Duplex Pipeline:** Implemented asynchronous producer-consumer architecture in `src/api/main.py`. This allows the user to speak continuously while the system translates and plays back previous sentences in parallel (Reference: `ADR-0002`).
+- **Frontend Audio Queue:** Added `AudioQueue` class in `static/index.html` to manage sequential playback of translated audio segments, preventing overlap.
+- **VAD Padding:** Added configurable silence padding (`padding_ms`) in `src/core/vad_processor.py` to prevent audio clipping at the start/end of detected sentences.
+- **Headphone Warning:** Added a UI alert in `index.html` advising users to use headphones to avoid echo loops in continuous mode.
+- **Config Documentation:** Added detailed English comments to `config.yaml` to explain all parameters.
+
+### Changed
+- Refactored `websocket_endpoint` to use `asyncio.Queue` and `asyncio.gather`.
+- Decoupled `input_loop` (VAD) and `translation_loop` (Inference).
+- Running translation inference in a separate thread using `run_in_executor` to avoid blocking the event loop.
+
 ## [1.0.0] - 2026-01-05
 
 ### Added
