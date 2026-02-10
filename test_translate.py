@@ -20,15 +20,16 @@ def test_translation():
     start_time = time.time()
     
     try:
-        audio_output = engine.translate(audio_input)
+        audio_output_bytes = engine.translate(audio_input)
         elapsed = time.time() - start_time
         
         print(f"Success! Inference time: {elapsed:.2f}s")
-        print(f"Output shape: {audio_output.shape}")
+        print(f"Output size: {len(audio_output_bytes)} bytes")
         
-        # Save output to file using soundfile directly
+        # Save output to file (engine.translate returns WAV bytes)
         output_file = "test_output.wav"
-        sf.write(output_file, audio_output, 16000)
+        with open(output_file, "wb") as f:
+            f.write(audio_output_bytes)
         print(f"Result saved to '{output_file}'")
         
     except Exception as e:

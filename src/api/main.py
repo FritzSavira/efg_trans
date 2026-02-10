@@ -57,14 +57,14 @@ async def get_status():
 
 
 @app.websocket("/ws/translate")
-async def websocket_endpoint(websocket: WebSocket, tgt_lang: str = "eng"):
+async def websocket_endpoint(websocket: WebSocket, src_lang: str = "deu", tgt_lang: str = "eng"):
     """
     WebSocket endpoint for real-time speech translation.
     Receives Float32 PCM audio chunks, processes through VAD,
     and returns translated audio blobs.
     """
     await websocket.accept()
-    logger.info(f"Client connected to translation WebSocket. Target Language: {tgt_lang}")
+    logger.info(f"Client connected to translation WebSocket. Source Language: {src_lang}, Target Language: {tgt_lang}")
     
     vad: VADProcessor = models["vad"]
     translator: TranslatorEngine = models["translator"]
@@ -134,7 +134,7 @@ async def websocket_endpoint(websocket: WebSocket, tgt_lang: str = "eng"):
                 # Run blocking translation inference in a separate thread
                 loop = asyncio.get_running_loop()
                 translated_audio_bytes = await loop.run_in_executor(
-                    None, translator.translate, sentence_audio, tgt_lang
+                    None, translator.translate, sentence_audio, tgt_lang, src_lang
                 )
 
                 # DEBUG: Save Output Audio

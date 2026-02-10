@@ -23,16 +23,36 @@
             Der "Continuous Mode" erfordert Kopfhörer, um ein Echo zu vermeiden.
         </div>
         
-        <div class="mb-3">
-            <label for="language-select" class="form-label fw-bold">Zielsprache wählen:</label>
-            <select class="form-select mb-3" id="language-select">
-                <option value="eng" selected>Englisch (English)</option>
-                <option value="spa">Spanisch (Español)</option>
-                <option value="por">Portugiesisch (Português)</option>
-                <option value="arb">Arabisch (العربية)</option>
-                <option value="pes">Farsi (Persisch)</option>
-                <option value="cmn">Mandarin (Chinesisch)</option>
-            </select>
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <label for="src-language-select" class="form-label fw-bold">Quellsprache:</label>
+                <select class="form-select" id="src-language-select">
+                    <option value="deu" selected>Deutsch (German)</option>
+                    <option value="eng">Englisch (English)</option>
+                    <option value="spa">Spanisch (Español)</option>
+                    <option value="fas">Farsi (Persisch)</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="language-select" class="form-label fw-bold">Zielsprache:</label>
+                <select class="form-select" id="language-select">
+                    <option value="eng" selected>Englisch (English)</option>
+                    <option value="deu">Deutsch (German)</option>
+                    <option value="spa">Spanisch (Español)</option>
+                    <option value="por">Portugiesisch (Português)</option>
+                    <option value="arb">Arabisch (العربية)</option>
+                    <option value="pes">Farsi (Persisch)</option>
+                    <option value="cmn">Mandarin (Chinesisch)</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="voice-select" class="form-label fw-bold">Stimme:</label>
+                <select class="form-select" id="voice-select">
+                    <option value="auto" selected>Auto-Erkennung</option>
+                    <option value="male">Männlich</option>
+                    <option value="female">Weiblich</option>
+                </select>
+            </div>
         </div>
 
         <div class="mb-3">
@@ -68,7 +88,9 @@
         const statusText = document.getElementById('status-text');
         const dot = document.getElementById('dot');
         const logs = document.getElementById('logs');
+        const srcLanguageSelect = document.getElementById('src-language-select');
         const languageSelect = document.getElementById('language-select');
+        const voiceSelect = document.getElementById('voice-select');
         const silenceSlider = document.getElementById('silence-slider');
         const silenceVal = document.getElementById('silence-val');
         const uploadBtn = document.getElementById('upload-btn');
@@ -136,17 +158,21 @@
         
         async function connectWebSocket() {
             return new Promise((resolve, reject) => {
+                const srcLang = srcLanguageSelect.value;
                 const targetLang = languageSelect.value;
+                const voice = voiceSelect.value;
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                ws = new WebSocket(`${protocol}//${window.location.host}/ws/translate?tgt_lang=${targetLang}`);
+                ws = new WebSocket(`${protocol}//${window.location.host}/ws/translate?src_lang=${srcLang}&tgt_lang=${targetLang}&voice=${voice}`);
                 ws.binaryType = 'arraybuffer';
                 
                 ws.onopen = () => {
-                    statusText.textContent = `File Mode (${targetLang})`;
+                    statusText.textContent = `File Mode (${srcLang}->${targetLang})`;
                     dot.classList.add('status-online');
                     recordBtn.textContent = 'Stop Playback';
                     recordBtn.classList.replace('btn-primary', 'btn-danger');
+                    srcLanguageSelect.disabled = true;
                     languageSelect.disabled = true;
+                    voiceSelect.disabled = true;
                     uploadBtn.disabled = true;
                     addLog('Connected to server.');
                     resolve();
@@ -263,20 +289,23 @@
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 
-                // Initialize WebSocket with language parameter
+                // Initialize WebSocket with language parameters
+                const srcLang = srcLanguageSelect.value;
                 const targetLang = languageSelect.value;
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                ws = new WebSocket(`${protocol}//${window.location.host}/ws/translate?tgt_lang=${targetLang}`);
+                ws = new WebSocket(`${protocol}//${window.location.host}/ws/translate?src_lang=${srcLang}&tgt_lang=${targetLang}`);
                 ws.binaryType = 'arraybuffer';
 
                 ws.onopen = () => {
-                    statusText.textContent = `Online (${targetLang})`;
+                    statusText.textContent = `Online (${srcLang}->${targetLang})`;
                     dot.classList.add('status-online');
                     recordBtn.textContent = 'Stop Recording';
                     recordBtn.classList.replace('btn-primary', 'btn-danger');
+                    srcLanguageSelect.disabled = true;
                     languageSelect.disabled = true;
+                    voiceSelect.disabled = true;
                     uploadBtn.disabled = true;
-                    addLog(`Connected to server. Target: ${targetLang}`);
+                    addLog(`Connected to server. Mode: ${srcLang} -> ${targetLang}`);
                     setupAudioProcessing(stream);
                 };
 
@@ -314,7 +343,9 @@
             dot.classList.remove('status-online');
             recordBtn.textContent = 'Start Recording';
             recordBtn.classList.replace('btn-danger', 'btn-primary');
+            srcLanguageSelect.disabled = false;
             languageSelect.disabled = false;
+            voiceSelect.disabled = false;
             uploadBtn.disabled = false;
         }
 

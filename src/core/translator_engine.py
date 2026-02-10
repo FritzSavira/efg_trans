@@ -33,24 +33,26 @@ class TranslatorEngine:
 
         logger.info("Translator Engine loaded successfully.")
 
-    def translate(self, audio_np: np.ndarray, tgt_lang: str = None) -> bytes:
+    def translate(self, audio_np: np.ndarray, tgt_lang: str = None, src_lang: str = None) -> bytes:
         """
-        Translates German audio input to a target language audio output.
+        Translates audio input to a target language audio output.
 
         Args:
             audio_np (np.ndarray): Input audio (16kHz, float32).
             tgt_lang (str, optional): Target language code. Defaults to config value.
+            src_lang (str, optional): Source language code. Defaults to config value.
 
         Returns:
             bytes: Synthesized audio as WAV file (in-memory).
         """
         target = tgt_lang if tgt_lang else self.tgt_lang
+        source = src_lang if src_lang else self.src_lang
         
         # DEBUG: Check input audio stats
         input_max = np.max(np.abs(audio_np))
         input_mean = np.mean(np.abs(audio_np))
         logger.info(
-            f"Starting translation ({self.src_lang} -> {target})... Input Stats: Max={input_max:.4f}, Mean={input_mean:.4f}, Length={len(audio_np)} samples"
+            f"Starting translation ({source} -> {target})... Input Stats: Max={input_max:.4f}, Mean={input_mean:.4f}, Length={len(audio_np)} samples"
         )
 
         if input_max < 0.01:
@@ -58,7 +60,7 @@ class TranslatorEngine:
 
         # Pre-process
         audio_inputs = self.processor(
-            audio=audio_np, src_lang=self.src_lang, return_tensors="pt", sampling_rate=16000
+            audio=audio_np, src_lang=source, return_tensors="pt", sampling_rate=16000
         ).to(self.device)
 
         # Cast to correct dtype for inference
