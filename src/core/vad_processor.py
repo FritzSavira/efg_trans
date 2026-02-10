@@ -110,7 +110,7 @@ class VADProcessor:
             full_audio = np.concatenate(self.sentence_buffer)
             self.sentence_buffer = []  # Reset buffer
             # self.iterator.reset_states() # VADIterator does this internally usually, but 'reset_states' is for hard reset
-            
+
             # Apply Padding
             if self.padding_ms > 0:
                 pad_samples = int((self.padding_ms / 1000.0) * self.sample_rate)

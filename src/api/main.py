@@ -1,11 +1,9 @@
 import logging
-import os
 import time
 import asyncio
 import json
 from contextlib import asynccontextmanager
 
-import soundfile as sf
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -57,20 +55,23 @@ async def get_status():
 
 
 @app.websocket("/ws/translate")
-async def websocket_endpoint(websocket: WebSocket, src_lang: str = "deu", tgt_lang: str = "eng"):
+async def websocket_endpoint(websocket: WebSocket, src_lang: str = "deu", tgt_lang: str = "eng", voice: str = "male"):
     """
     WebSocket endpoint for real-time speech translation.
     Receives Float32 PCM audio chunks, processes through VAD,
     and returns translated audio blobs.
     """
     await websocket.accept()
-    logger.info(f"Client connected to translation WebSocket. Source Language: {src_lang}, Target Language: {tgt_lang}")
-    
+    logger.info(f"Client connected. Source: {src_lang}, Target: {tgt_lang}, Voice: {voice}")
+
     vad: VADProcessor = models["vad"]
     translator: TranslatorEngine = models["translator"]
-    
+
     # We should reset VAD state for each new connection
     vad.reset()
+
+    # Session state for live updates
+    session_state = {"src_lang": src_lang, "tgt_lang": tgt_lang, "voice": voice}
 
     # Create an asyncio queue for communication between input and translation loops
     queue = asyncio.Queue()
@@ -85,19 +86,13 @@ async def websocket_endpoint(websocket: WebSocket, src_lang: str = "deu", tgt_la
                 if "bytes" in message:
                     # Receive audio chunk as bytes
                     data = message["bytes"]
-                    
+
                     # Process chunk through VAD
                     sentence_audio = vad.process(data)
-                    
+
                     if sentence_audio is not None:
                         timestamp = int(time.time())
                         logger.info(f"Sentence detected, pushing to queue... (Timestamp: {timestamp})")
-                        
-                        # DEBUG: Save Input Audio
-                        os.makedirs("static/debug", exist_ok=True)
-                        input_filename = f"static/debug/input_{timestamp}.wav"
-                        sf.write(input_filename, sentence_audio, 16000)
-
                         await queue.put(sentence_audio)
 
                 elif "text" in message:
@@ -105,9 +100,25 @@ async def websocket_endpoint(websocket: WebSocket, src_lang: str = "deu", tgt_la
                     try:
                         payload = json.loads(message["text"])
                         if payload.get("type") == "config":
+                            # Handle VAD changes
                             ms = payload.get("min_silence_ms")
                             if ms:
                                 vad.set_min_silence(int(ms))
+
+                            # Handle Language/Voice changes
+                            new_src = payload.get("src_lang")
+                            new_tgt = payload.get("tgt_lang")
+                            new_voice = payload.get("voice")
+
+                            if new_src:
+                                session_state["src_lang"] = new_src
+                            if new_tgt:
+                                session_state["tgt_lang"] = new_tgt
+                            if new_voice:
+                                session_state["voice"] = new_voice
+
+                            logger.info(f"Session config updated: {session_state}")
+
                     except Exception as e:
                         logger.warning(f"Invalid config message: {e}")
 
@@ -124,32 +135,32 @@ async def websocket_endpoint(websocket: WebSocket, src_lang: str = "deu", tgt_la
         try:
             while True:
                 sentence_audio = await queue.get()
-                
+
                 if sentence_audio is None:
                     # Sentinel received, stop
                     break
 
-                logger.info(f"Processing sentence from queue. Queue size: {queue.qsize()}")
-                
+                logger.info(f"Processing sentence from queue. Session Config: {session_state}")
+
                 # Run blocking translation inference in a separate thread
                 loop = asyncio.get_running_loop()
                 translated_audio_bytes = await loop.run_in_executor(
-                    None, translator.translate, sentence_audio, tgt_lang, src_lang
+                    None,
+                    translator.translate,
+                    sentence_audio,
+                    session_state["tgt_lang"],
+                    session_state["src_lang"],
+                    session_state["voice"],
                 )
-
-                # DEBUG: Save Output Audio
-                timestamp = int(time.time())
-                output_filename = f"static/debug/output_{timestamp}.wav"
-                with open(output_filename, "wb") as f:
-                    f.write(translated_audio_bytes)
 
                 # Send back the translated audio bytes (WAV)
                 await websocket.send_bytes(translated_audio_bytes)
-                logger.info(f"Translated audio ({tgt_lang}) sent to client.")
-                
                 queue.task_done()
         except Exception as e:
             logger.error(f"Error in translation_loop: {e}")
+
+    # Run both loops concurrently
+    await asyncio.gather(input_loop(), translation_loop())
 
     # Run both loops concurrently
     await asyncio.gather(input_loop(), translation_loop())

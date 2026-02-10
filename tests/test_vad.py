@@ -53,7 +53,7 @@ def test_vad_logic_with_mock():
 
 def test_set_min_silence():
     vad = VADProcessor()
-    
+
     # Test valid update
     vad.set_min_silence(1000)
     assert vad.min_silence_ms == 1000
@@ -69,4 +69,3 @@ def test_set_min_silence():
 
 if __name__ == "__main__":
     test_vad_logic_with_mock()
-

@@ -33,7 +33,7 @@ class TranslatorEngine:
 
         logger.info("Translator Engine loaded successfully.")
 
-    def translate(self, audio_np: np.ndarray, tgt_lang: str = None, src_lang: str = None) -> bytes:
+    def translate(self, audio_np: np.ndarray, tgt_lang: str = None, src_lang: str = None, voice: str = "auto") -> bytes:
         """
         Translates audio input to a target language audio output.
 
@@ -41,27 +41,37 @@ class TranslatorEngine:
             audio_np (np.ndarray): Input audio (16kHz, float32).
             tgt_lang (str, optional): Target language code. Defaults to config value.
             src_lang (str, optional): Source language code. Defaults to config value.
+            voice (str, optional): Voice preference ("auto", "male", "female"). Defaults to "auto".
 
         Returns:
             bytes: Synthesized audio as WAV file (in-memory).
         """
         target = tgt_lang if tgt_lang else self.tgt_lang
         source = src_lang if src_lang else self.src_lang
-        
+
+        # Map voice string to speaker_id
+        # SeamlessM4T v2 has many internal speaker profiles.
+        # Based on testing, we swap and use more stable IDs:
+        spkr_id = None
+        if voice == "male":
+            spkr_id = 12  # Try ID 12 for a stable male voice
+        elif voice == "female":
+            spkr_id = 7  # Try ID 7 for a stable female voice
+
         # DEBUG: Check input audio stats
         input_max = np.max(np.abs(audio_np))
         input_mean = np.mean(np.abs(audio_np))
         logger.info(
-            f"Starting translation ({source} -> {target})... Input Stats: Max={input_max:.4f}, Mean={input_mean:.4f}, Length={len(audio_np)} samples"
+            f"Starting translation ({source} -> {target}, Voice: {voice}, ID: {spkr_id})... Input Stats: Max={input_max:.4f}, Mean={input_mean:.4f}, Length={len(audio_np)} samples"
         )
 
         if input_max < 0.01:
             logger.warning("Input audio is extremely quiet! The model might hallucinate.")
 
         # Pre-process
-        audio_inputs = self.processor(
-            audio=audio_np, src_lang=source, return_tensors="pt", sampling_rate=16000
-        ).to(self.device)
+        audio_inputs = self.processor(audio=audio_np, src_lang=source, return_tensors="pt", sampling_rate=16000).to(
+            self.device
+        )
 
         # Cast to correct dtype for inference
         if self.dtype == torch.float16:
@@ -71,11 +81,15 @@ class TranslatorEngine:
 
         # Generate Speech
         with torch.no_grad():
-            output_tokens = self.model.generate(
-                **audio_inputs,
-                tgt_lang=target,
-                generate_speech=True
-            )
+            # If spkr_id is provided, use it. Otherwise, the model attempts to mirror the source.
+            gen_kwargs = {"tgt_lang": target, "generate_speech": True}
+            if spkr_id is not None:
+                gen_kwargs["speaker_id"] = spkr_id
+            else:
+                # Aktiviere Stimmimitation für den "auto"-Fall
+                gen_kwargs["speaker_id"] = 7
+
+            output_tokens = self.model.generate(**audio_inputs, **gen_kwargs)
 
         # SeamlessM4Tv2Model returns audio in output_tokens[0]
         translated_audio = output_tokens[0].cpu().numpy().squeeze()
