@@ -1,0 +1,104 @@
+import torch
+import numpy as np
+import logging
+from typing import Optional, List
+from src.core.config import config
+
+logger = logging.getLogger(__name__)
+
+
+class VADProcessor:
+    def __init__(self):
+        # Load Silero VAD model
+        logger.info("Loading Silero VAD model...")
+        try:
+            self.model, utils = torch.hub.load(
+                repo_or_dir="snakers4/silero-vad",
+                model="silero_vad",
+                force_reload=False,
+                onnx=False,
+            )
+            # Unpack utils to get VADIterator
+            (_, _, _, VADIterator, _) = utils
+
+            # Configuration
+            self.threshold = config.get("models", {}).get("vad", {}).get("threshold", 0.5)
+            self.min_silence_ms = config.get("models", {}).get("vad", {}).get("min_silence_duration_ms", 500)
+            self.padding_ms = config.get("models", {}).get("vad", {}).get("padding_ms", 0)
+            self.sample_rate = 16000
+
+            # Initialize Iterator
+            self.iterator = VADIterator(
+                self.model,
+                threshold=self.threshold,
+                sampling_rate=self.sample_rate,
+                min_silence_duration_ms=self.min_silence_ms,
+            )
+            logger.info("Silero VAD model loaded.")
+        except Exception as e:
+            logger.error(f"Failed to load VAD model: {e}")
+            raise
+
+        # Buffers
+        self.processing_buffer = np.array([], dtype=np.float32)  # For feeding the model in correct chunk sizes
+        self.sentence_buffer: List[np.ndarray] = []
+        self.is_recording = False
+
+    def process(self, chunk_bytes: bytes) -> Optional[np.ndarray]:
+        """
+        Processes a chunk of audio. Returns a complete sentence as np.ndarray
+        if silence is detected after speech.
+        """
+        # Convert bytes to float32
+        chunk_np = np.frombuffer(chunk_bytes, dtype=np.float32)
+        if len(chunk_np) == 0:
+            return None
+
+        # Append to processing buffer
+        self.processing_buffer = np.concatenate([self.processing_buffer, chunk_np])
+
+        WINDOW_SIZE_SAMPLES = 512
+        sentence_complete = False
+
+        while len(self.processing_buffer) >= WINDOW_SIZE_SAMPLES:
+            # Extract window
+            window = self.processing_buffer[:WINDOW_SIZE_SAMPLES]
+            self.processing_buffer = self.processing_buffer[WINDOW_SIZE_SAMPLES:]
+
+            chunk_torch = torch.from_numpy(window)
+
+            # Use VADIterator
+            speech_dict = self.iterator(chunk_torch, return_seconds=False)
+
+            if speech_dict and "start" in speech_dict:
+                logger.info("VAD: Speech started.")
+                self.is_recording = True
+
+            if self.is_recording:
+                self.sentence_buffer.append(window)
+
+            if speech_dict and "end" in speech_dict:
+                logger.info("VAD: Speech ended.")
+                self.is_recording = False
+                sentence_complete = True
+                break
+
+        if sentence_complete and self.sentence_buffer:
+            full_audio = np.concatenate(self.sentence_buffer)
+            self.sentence_buffer = []
+
+            # Apply Padding
+            if self.padding_ms > 0:
+                pad_samples = int((self.padding_ms / 1000.0) * self.sample_rate)
+                silence = np.zeros(pad_samples, dtype=np.float32)
+                full_audio = np.concatenate([silence, full_audio, silence])
+
+            return full_audio
+
+        return None
+
+    def reset(self):
+        self.iterator.reset_states()
+        self.processing_buffer = np.array([], dtype=np.float32)
+        self.sentence_buffer = []
+        self.is_recording = False

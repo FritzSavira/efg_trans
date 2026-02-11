@@ -1,10 +1,11 @@
 fastapi
 uvicorn[standard]
-torch
-torchaudio
-transformers
+python-multipart
+torch==2.5.1
+torchaudio==2.5.1
+transformers==4.37.2
 silero-vad
-numpy
+numpy<2.0.0
 pyyaml
 pytest
 httpx
@@ -13,3 +14,7 @@ ruff
 blobfile
 sentencepiece
 soundfile
+faster-whisper==1.0.3
+llama-cpp-python>=0.2.26
+TTS==0.22.0
+sounddevice
