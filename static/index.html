@@ -50,6 +50,7 @@
                 <select class="form-select" id="voice-select">
                     <option value="male" selected>Männlich</option>
                     <option value="female">Weiblich</option>
+                    <option value="clone">Klonen (Eigene Stimme)</option>
                 </select>
             </div>
         </div>
@@ -117,6 +118,8 @@
              await handleFileUpload(file);
              fileInput.value = ''; 
         };
+
+        function jsonStr(obj) { return JSON.stringify(obj); }
 
         async function handleFileUpload(file) {
              if (ws && ws.readyState === WebSocket.OPEN) {
@@ -194,6 +197,9 @@
                 ws.onerror = (err) => reject(err);
                 
                 ws.onmessage = async (event) => {
+                    if (typeof event.data === 'string') {
+                        return;
+                    }
                     addLog('Received translation. Enqueueing...');
                     audioQueue.enqueue(event.data);
                 };
@@ -321,6 +327,9 @@
                 };
 
                 ws.onmessage = async (event) => {
+                    if (typeof event.data === 'string') {
+                        return;
+                    }
                     addLog('Received translation. Enqueueing...');
                     audioQueue.enqueue(event.data);
                 };

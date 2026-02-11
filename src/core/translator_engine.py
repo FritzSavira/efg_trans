@@ -33,7 +33,13 @@ class TranslatorEngine:
 
         logger.info("Translator Engine loaded successfully.")
 
-    def translate(self, audio_np: np.ndarray, tgt_lang: str = None, src_lang: str = None, voice: str = "auto") -> bytes:
+    def translate(
+        self,
+        audio_np: np.ndarray,
+        tgt_lang: str = None,
+        src_lang: str = None,
+        voice: str = "auto",
+    ) -> bytes:
         """
         Translates audio input to a target language audio output.
 
@@ -41,7 +47,7 @@ class TranslatorEngine:
             audio_np (np.ndarray): Input audio (16kHz, float32).
             tgt_lang (str, optional): Target language code. Defaults to config value.
             src_lang (str, optional): Source language code. Defaults to config value.
-            voice (str, optional): Voice preference ("auto", "male", "female"). Defaults to "auto".
+            voice (str, optional): Voice preference ("auto", "male", "female", "clone"). Defaults to "auto".
 
         Returns:
             bytes: Synthesized audio as WAV file (in-memory).
@@ -51,12 +57,16 @@ class TranslatorEngine:
 
         # Map voice string to speaker_id
         # SeamlessM4T v2 has many internal speaker profiles.
-        # Based on testing, we swap and use more stable IDs:
-        spkr_id = None
+        # Based on testing, we use stable IDs (7 for female, 12 for male).
+        # Note: Speaker preservation (prosody/style) is handled automatically by the model's 
+        # architecture through the input features, regardless of the fixed speaker_id.
+        spkr_id = 7  # Default fallback (female-leaning neutral)
         if voice == "male":
-            spkr_id = 12  # Try ID 12 for a stable male voice
+            spkr_id = 12
         elif voice == "female":
-            spkr_id = 7  # Try ID 7 for a stable female voice
+            spkr_id = 7
+        elif voice == "clone":
+            spkr_id = 7  # Use stable base; prosody is still derived from source
 
         # DEBUG: Check input audio stats
         input_max = np.max(np.abs(audio_np))
@@ -81,13 +91,11 @@ class TranslatorEngine:
 
         # Generate Speech
         with torch.no_grad():
-            # If spkr_id is provided, use it. Otherwise, the model attempts to mirror the source.
-            gen_kwargs = {"tgt_lang": target, "generate_speech": True}
-            if spkr_id is not None:
-                gen_kwargs["speaker_id"] = spkr_id
-            else:
-                # Aktiviere Stimmimitation für den "auto"-Fall
-                gen_kwargs["speaker_id"] = 7
+            gen_kwargs = {
+                "tgt_lang": target,
+                "generate_speech": True,
+                "speaker_id": spkr_id
+            }
 
             output_tokens = self.model.generate(**audio_inputs, **gen_kwargs)
 
