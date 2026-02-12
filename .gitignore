@@ -15,6 +15,7 @@ ENV/
 .idea/
 
 # Project Specific
+models/
 models_cache/
 static/debug/
 *.wav
