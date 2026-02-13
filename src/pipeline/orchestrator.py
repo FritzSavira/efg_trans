@@ -128,6 +128,10 @@ class PipelineOrchestrator:
             await self.audio_q.put(segment)
 
     async def _asr_worker(self):
+        # Fetch threshold from config
+        from src.core.config import config
+        min_conf = config.get("models", {}).get("asr", {}).get("min_confidence", 0.0)
+        
         while self.is_running or not self.audio_q.empty():
             try:
                 audio_segment = await asyncio.wait_for(self.audio_q.get(), timeout=1.0)
@@ -138,17 +142,33 @@ class PipelineOrchestrator:
                     loop = asyncio.get_event_loop()
                     result = await loop.run_in_executor(None, self.asr.transcribe, audio_segment.data, self.src_lang)
                     duration = time.time() - start
+                    
                     if result.text:
+                        # Add metadata and metrics regardless of filtering for analytics
                         result.metadata = audio_segment.metadata
                         result.metadata["asr_duration"] = duration
                         result.metadata["asr_confidence"] = result.confidence
                         result.metadata["asr_text"] = result.text
                         result.metadata["asr_word_count"] = len(result.text.split())
+                        
                         await self.metrics_q.put({
                             "type": "metric", "stage": "asr", "duration": duration,
                             "correlation_id": result.metadata.get("correlation_id")
                         })
-                        await self.text_q.put(result)
+                        
+                        # Apply confidence threshold
+                        if result.confidence >= min_conf:
+                            await self.text_q.put(result)
+                        else:
+                            logger.warning(
+                                f"ASR rejected (Confidence: {result.confidence:.2f} < {min_conf:.2f}). "
+                                f"Text: '{result.text}'"
+                            )
+                            # Record the rejection in session logs for later analysis
+                            result.metadata["rejected"] = True
+                            result.metadata["rejection_reason"] = "low_confidence"
+                            await self.session_q.put(result.metadata)
+                            
                 except Exception as e:
                     logger.error(f"ASR worker error: {e}")
                 finally:

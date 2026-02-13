@@ -24,3 +24,13 @@ models:
     model_path: "models/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
     n_ctx: 2048
     n_gpu_layers: -1           # -1 for all layers on GPU
+
+  # ASR Settings
+  asr:
+    model_size: "large-v3"
+    min_confidence: 0.55        # Only translate if ASR confidence is above this threshold (0.0 to 1.0)
+    device: "cuda"
+
+  # TTS Settings
+  tts:
+    device: "cuda"
