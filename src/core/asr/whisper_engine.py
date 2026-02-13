@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 import numpy as np
 from src.core.interfaces import ASREngine, TranscriptionResult
 
@@ -28,17 +29,18 @@ class WhisperASR(ASREngine):
             logger.error(f"Failed to load Whisper model: {e}")
             raise
 
-    def transcribe(self, audio: np.ndarray) -> TranscriptionResult:
+    def transcribe(self, audio: np.ndarray, language: Optional[str] = None) -> TranscriptionResult:
         if self.model is None:
             raise RuntimeError("Whisper model is not initialized.")
 
         # faster-whisper expects float32
         # Ensure we don't have empty audio
         if audio.size == 0:
-            return TranscriptionResult("", "en", 0.0, 0.0, 0.0)
+            return TranscriptionResult("", language or "en", 0.0, 0.0, 0.0)
 
         try:
-            segments, info = self.model.transcribe(audio, beam_size=5)
+            # Pass language if provided to skip auto-detection
+            segments, info = self.model.transcribe(audio, beam_size=5, language=language)
 
             # segments is a generator, force realization to get text
             segment_list = list(segments)

@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-02-12
+### Added
+- **Modular Trinity Architecture:** Complete refactor from a monolithic model to a decoupled pipeline (ASR -> LLM -> TTS).
+- **ASR Engine:** Integrated `Faster-Whisper` (large-v3) for high-speed, accurate transcription. Support for manual language selection to suppress auto-detection logs.
+- **LLM Engine:** Integrated `Qwen2.5-7B-Instruct` and `Llama-3` (GGUF via llama-cpp-python) for context-aware theological translation.
+- **TTS Engine:** Integrated `Coqui XTTS v2` with authentic zero-shot voice cloning capabilities.
+- **Performance Dashboard:** Real-time UI component monitoring ASR, LLM, TTS, and End-to-End latency against KPI targets (< 4000ms).
+- **Session Analytics:** Automated JSONL logging of all translation events, including text, word counts, and stage-specific durations for performance analysis.
+- **Asynchronous Pipeline:** Decoupled metrics and logging via dedicated background workers and queues to ensure zero impact on translation latency.
+
+### Changed
+- Refactored `src/` to follow a core-engine pattern with abstract interfaces.
+- Archived legacy SeamlessM4T code to `src_legacy/`.
+- Updated `docker-compose.yaml` to include volume persistence for `logs/` and `uploads/`.
+
 ## [1.1.0] - 2026-01-06
 ### Added
 - **Dynamic VAD Sensitivity:** Added a UI slider to adjust the `min_silence_duration_ms` at runtime. The backend now supports a hybrid WebSocket protocol (Binary for Audio, JSON for Config).

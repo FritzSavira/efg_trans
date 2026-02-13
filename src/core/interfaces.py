@@ -10,6 +10,11 @@ class AudioSegment:
     timestamp: float  # Unix timestamp of capture
     sample_rate: int = 16000
     is_calibration: bool = False
+    metadata: Optional[dict] = None
+
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
 
 
 @dataclass
@@ -19,6 +24,11 @@ class TranscriptionResult:
     confidence: float  # 0.0 - 1.0
     start_time: float
     end_time: float
+    metadata: Optional[dict] = None
+
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
 
 
 @dataclass
@@ -28,11 +38,16 @@ class TranslationResult:
     src_lang: str
     tgt_lang: str
     correction_applied: bool  # True if Glossary/Prompt altered terms
+    metadata: Optional[dict] = None
+
+    def __post_init__(self):
+        if self.metadata is None:
+            self.metadata = {}
 
 
 class ASREngine(ABC):
     @abstractmethod
-    def transcribe(self, audio: np.ndarray) -> TranscriptionResult:
+    def transcribe(self, audio: np.ndarray, language: Optional[str] = None) -> TranscriptionResult:
         pass
 
 

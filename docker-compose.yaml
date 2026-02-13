@@ -11,6 +11,8 @@ services:
       - ./models:/app/models
       # NEW: Mount uploads folder so speaker refs survive container restarts
       - ./uploads:/app/uploads
+      # NEW: Mount logs folder to persist session metrics and performance analysis
+      - ./logs:/app/logs
       # Mount the source code for development
       - ./src:/app/src
       - ./static:/app/static

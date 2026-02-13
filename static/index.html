@@ -63,6 +63,35 @@
             <div id="engine-status-list" class="engine-status"></div>
         </div>
 
+        <!-- Performance Dashboard -->
+        <div class="card mb-4 border-warning bg-light">
+            <div class="card-body py-2">
+                <h6 class="card-title small fw-bold mb-2">🚀 Performance Monitoring (KPIs)</h6>
+                <div class="row g-2 text-center" style="font-size: 0.75rem;">
+                    <div class="col-3">
+                        <div class="text-muted">ASR</div>
+                        <div id="metric-asr" class="fw-bold">-- ms</div>
+                    </div>
+                    <div class="col-3">
+                        <div class="text-muted">LLM</div>
+                        <div id="metric-llm" class="fw-bold">-- ms</div>
+                    </div>
+                    <div class="col-3">
+                        <div class="text-muted">TTS</div>
+                        <div id="metric-tts" class="fw-bold">-- ms</div>
+                    </div>
+                    <div class="col-3 border-start border-warning">
+                        <div class="text-muted">E2E</div>
+                        <div id="metric-e2e" class="fw-bold text-primary">-- ms</div>
+                    </div>
+                </div>
+                <div class="progress mt-2" style="height: 4px;">
+                    <div id="e2e-progress" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                </div>
+                <div class="form-text mt-1 text-center" style="font-size: 0.6rem;">Target E2E: &lt; 4000ms</div>
+            </div>
+        </div>
+
         <div class="d-grid gap-2 mb-4">
             <div class="d-flex gap-2">
                 <button id="record-btn" class="btn btn-primary flex-grow-1">Start Translation</button>
@@ -140,9 +169,128 @@
         fileInput.onchange = async (e) => {
              const file = e.target.files[0];
              if (!file) return;
-             addLog(`Streaming file: ${file.name}...`);
-             // Implementation for file streaming omitted for brevity, similar to legacy
+             await handleFileUpload(file);
+             fileInput.value = ''; 
         };
+
+        async function handleFileUpload(file) {
+             if (ws && ws.readyState === WebSocket.OPEN) {
+                 stopRecording();
+                 await new Promise(r => setTimeout(r, 500));
+             }
+             
+             addLog(`Processing file: ${file.name} (${(file.size/1024).toFixed(1)} KB)...`);
+             
+             try {
+                 const arrayBuffer = await file.arrayBuffer();
+                 const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+                 const audioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
+                 
+                 addLog(`Decoded. Original Rate: ${audioBuffer.sampleRate}Hz, Duration: ${audioBuffer.duration.toFixed(2)}s`);
+                 
+                 const resampledBuffer = await resampleTo16k(audioBuffer);
+                 addLog(`Resampled to 16000Hz.`);
+                 
+                 await connectWebSocket();
+                 streamAudioFile(resampledBuffer);
+                 
+             } catch (err) {
+                 addLog('Error processing file: ' + err);
+             }
+        }
+
+        async function resampleTo16k(audioBuffer) {
+            if (audioBuffer.sampleRate === 16000) return audioBuffer;
+            const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * 16000, 16000);
+            const source = offlineCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(offlineCtx.destination);
+            source.start(0);
+            return await offlineCtx.startRendering();
+        }
+
+        async function connectWebSocket() {
+            return new Promise((resolve, reject) => {
+                const srcLang = srcLanguageSelect.value;
+                const targetLang = languageSelect.value;
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                
+                ws = new WebSocket(`${protocol}//${window.location.host}/ws/translate?src_lang=${srcLang}&tgt_lang=${targetLang}`);
+                ws.binaryType = 'arraybuffer';
+                
+                ws.onopen = () => {
+                    statusText.textContent = `File Mode (${srcLang}->${targetLang})`;
+                    dot.classList.add('status-online');
+                    recordBtn.textContent = 'Stop Playback';
+                    recordBtn.classList.replace('btn-primary', 'btn-danger');
+                    addLog('Connected. Streaming file...');
+                    sendConfig();
+                    resolve();
+                };
+                
+                ws.onerror = (err) => reject(err);
+                
+                ws.onmessage = async (event) => {
+                    if (typeof event.data === 'string') {
+                        console.log("Received text message:", event.data);
+                        try {
+                            const msg = JSON.parse(event.data);
+                            if (msg.type === 'metric') {
+                                updateMetric(msg.stage, msg.duration);
+                            }
+                        } catch (e) {
+                            console.error("Failed to parse JSON:", e, event.data);
+                        }
+                        return;
+                    }
+                    audioQueue.enqueue(event.data);
+                };
+                
+                ws.onclose = () => {
+                     stopRecording();
+                };
+            });
+        }
+
+        function updateMetric(stage, duration) {
+            const ms = Math.round(duration * 1000);
+            const el = document.getElementById(`metric-${stage}`);
+            if (el) {
+                el.textContent = `${ms} ms`;
+                // Visual feedback if KPI is missed
+                if (stage === 'e2e') {
+                    const progressBar = document.getElementById('e2e-progress');
+                    const percent = Math.min((ms / 4000) * 100, 100);
+                    progressBar.style.width = `${percent}%`;
+                    if (ms > 4000) {
+                        progressBar.classList.replace('bg-success', 'bg-danger');
+                        el.classList.add('text-danger');
+                    } else {
+                        progressBar.classList.replace('bg-danger', 'bg-success');
+                        el.classList.remove('text-danger');
+                    }
+                }
+            }
+        }
+
+        let isFileStreaming = false;
+        async function streamAudioFile(audioBuffer) {
+            isFileStreaming = true;
+            const rawData = audioBuffer.getChannelData(0); 
+            const chunkSize = 4096;
+            let offset = 0;
+            
+            while (offset < rawData.length && isFileStreaming && ws && ws.readyState === WebSocket.OPEN) {
+                const end = Math.min(offset + chunkSize, rawData.length);
+                const chunk = rawData.slice(offset, end);
+                ws.send(chunk.buffer);
+                offset += chunkSize;
+                await new Promise(r => setTimeout(r, 250));
+            }
+            
+            addLog('File streaming finished.');
+            isFileStreaming = false;
+        }
 
         function sendConfig() {
             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -177,7 +325,18 @@
                 };
 
                 ws.onmessage = async (event) => {
-                    if (typeof event.data === 'string') return;
+                    if (typeof event.data === 'string') {
+                        console.log("Received text message:", event.data);
+                        try {
+                            const msg = JSON.parse(event.data);
+                            if (msg.type === 'metric') {
+                                updateMetric(msg.stage, msg.duration);
+                            }
+                        } catch (e) {
+                            console.error("Failed to parse JSON:", e, event.data);
+                        }
+                        return;
+                    }
                     audioQueue.enqueue(event.data);
                 };
 
@@ -192,6 +351,7 @@
         }
 
         function stopRecording() {
+            isFileStreaming = false;
             if (scriptProcessor) scriptProcessor.disconnect();
             if (input) input.disconnect();
             if (ws) ws.close();

@@ -63,8 +63,8 @@ This document defines the binding code quality and style guidelines for this pro
 
 **Phase 1: Analysis**
 1.  **Identification:** Identify the exact name of the element to be changed (e.g., function `get_user_data`, class `SessionManager`).
-2.  **Global search:** Perform a project-wide search for all occurrences of this name.
-- **Instruction:** Use the `search_file_content` tool to find all references. Example: `search_file_content(pattern=‘get_user_data’)`.
+2.  **Search:** Perform a search for occurrences of this name in the relevant files.
+- **Instruction:** Use the `search_file_content` tool to find relevant references. Example: `search_file_content(pattern=‘get_user_data’)`.
 3.  **Analysis of references:** Analyze EVERY search result. Create a checklist of all files and code locations affected by the change (e.g., function calls that need to be adjusted, class instantiations, etc.).
 
 **Phase 2: Implementation**
