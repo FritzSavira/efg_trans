@@ -1,36 +1,35 @@
 # Network and Server Configuration
 app:
-  host: "0.0.0.0" # The network interface to bind to. "0.0.0.0" allows access from other devices in the network.
-  port: 8000      # The port on which the web server will be accessible.
+  host: "0.0.0.0"               # Network interface to bind to (0.0.0.0 allows external access)
+  port: 8000                   # Port number for the web interface and API
 
 # AI Model Configuration
 models:
-  # Speech-to-Speech Translation Settings
-  translation:
-    # The AI model variant to use. 'large' is more accurate but slower/heavier; 'medium' is faster.
-    variant: "facebook/seamless-m4t-v2-large" # Options: "facebook/seamless-m4t-v2-large", "facebook/seamless-m4t-v2-medium"
-    src_lang: "deu" # The source language code (e.g., 'deu' for German).
-    tgt_lang: "eng" # The default target language code (e.g., 'eng' for English).
+  # ASR (Automatic Speech Recognition) - Faster-Whisper
+  asr:
+    model_size: "large-v3"      # Whisper model variant (large-v3 is most accurate)
+    min_confidence: 0.7        # Min. probability (0-1) required to start translation
+    device: "cuda"             # Hardware for transcription (cuda = GPU, cpu = Processor)
+
+  # LLM (Large Language Model) - Translation Engine
+  llm:
+    # --- MISTRAL (Recommended for pure translation) ---
+    engine_type: "llama"       # Driver for Mistral or Llama-3 models
+    model_path: "models/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf" # File path to the LLM
+    
+    # --- QWEN (Previous Model - Uncomment to switch back) ---
+    # engine_type: "qwen"       # Driver for Qwen models (uses ChatML format)
+    # model_path: "models/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
+
+    n_ctx: 2048                # Max. memory for conversation history (tokens)
+    n_gpu_layers: -1           # Number of model layers on GPU (-1 = all, max speed)
+
+  # TTS (Text-to-Speech) - Coqui XTTS v2
+  tts:
+    device: "cuda"             # Hardware for voice synthesis (cuda = GPU, cpu = Processor)
 
   # Voice Activity Detection (VAD) Settings
   vad:
-    threshold: 0.5               # Sensitivity (0.0 to 1.0). Higher means less sensitive (ignores more noise).
-    min_silence_duration_ms: 300 # How many milliseconds of silence are needed to mark the end of a sentence.
-    padding_ms: 10              # Adds extra silence (ms) before/after speech to prevent words from being cut off.
-
-  # Large Language Model (LLM) Settings for translation
-  llm:
-    engine_type: "qwen"       # Options: "llama", "qwen"
-    model_path: "models/Qwen2.5-7B-Instruct-Q4_K_M.gguf"
-    n_ctx: 2048
-    n_gpu_layers: -1           # -1 for all layers on GPU
-
-  # ASR Settings
-  asr:
-    model_size: "large-v3"
-    min_confidence: 0.55        # Only translate if ASR confidence is above this threshold (0.0 to 1.0)
-    device: "cuda"
-
-  # TTS Settings
-  tts:
-    device: "cuda"
+    threshold: 0.5             # Sensitivity (0-1); higher ignores more background noise
+    min_silence_duration_ms: 300 # Required silence (ms) to detect end of a sentence
+    padding_ms: 10              # Extra audio buffer (ms) added to prevent clipping words

@@ -39,26 +39,39 @@ class LlamaTranslator(LLMEngine):
         if not text.strip():
             return TranslationResult(text, "", src_lang, tgt_lang, False)
 
-        # Construct a strict prompt for translation
-        # Llama-3 Instruct template
-        prompt = (
-            f"<|start_header_id|>system<|end_header_id|>\n\n"
+        # Detect model type for prompting
+        model_path_lower = getattr(self.llm, "model_path", "").lower()
+        is_mistral = "mistral" in model_path_lower
+
+        system_instruction = (
             f"You are a professional theological translator. "
             f"Translate the following text from {src_lang} to {tgt_lang}. "
             f"Maintain biblical accuracy and terminology. "
-            f"Output ONLY the translated text without any explanations or filler.<|eot_id|>"
-            f"<|start_header_id|>user<|end_header_id|>\n\n"
-            f"{text}<|eot_id|>"
-            f"<|start_header_id|>assistant<|end_header_id|>\n\n"
+            f"Output ONLY the translated text without any explanations or filler."
         )
+
+        if is_mistral:
+            # Mistral [INST] format
+            prompt = f"[INST] {system_instruction}\n\n{text} [/INST]"
+            stop_tokens = ["[/INST]", "</s>"]
+        else:
+            # Default to Llama-3 Instruct template
+            prompt = (
+                f"<|start_header_id|>system<|end_header_id|>\n\n"
+                f"{system_instruction}<|eot_id|>"
+                f"<|start_header_id|>user<|end_header_id|>\n\n"
+                f"{text}<|eot_id|>"
+                f"<|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
+            stop_tokens = ["<|eot_id|>", "<|start_header_id|>"]
 
         try:
             response = self.llm(
                 prompt,
                 max_tokens=512,
-                stop=["<|eot_id|>"],
+                stop=stop_tokens,
                 echo=False,
-                temperature=0.0,  # Deterministic for translation
+                temperature=0.0,
             )
 
             translated_text = response["choices"][0]["text"].strip()
